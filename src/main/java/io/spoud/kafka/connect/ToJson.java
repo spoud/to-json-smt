@@ -22,6 +22,7 @@ import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.transforms.Transformation;
+import org.apache.kafka.connect.transforms.util.SimpleConfig;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
@@ -34,13 +35,31 @@ public class ToJson<R extends ConnectRecord<R>> implements Transformation<R> {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    public static final String OVERVIEW_DOC =
+            "JSONify the record value, turning it into a JSON string.";
+
+    private interface ConfigName {
+        String WRAP_KEY_VALUE = "wrap";
+    }
+
+    public static final ConfigDef CONFIG_DEF = new ConfigDef()
+            .define(ConfigName.WRAP_KEY_VALUE, ConfigDef.Type.BOOLEAN, false, ConfigDef.Importance.HIGH,
+                    "Whether to transform the key-value pair by wrapping them into an object like {\"key\": ..., \"value\": ...}. If unset, jsonifies just the value.");
+
+    private boolean wrapKeyValue;
+
     @Override
     public void configure(Map<String, ?> props) {
+        final SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
+        wrapKeyValue = config.getBoolean(ConfigName.WRAP_KEY_VALUE);
     }
 
     @Override
     public R apply(R record) {
-        var jsonString = objectMapper.writeValueAsString(convertValue(record.value()));
+        var jsonString = objectMapper.writeValueAsString(wrapKeyValue
+                ? convertValue(Map.of("key", record.key(), "value", record.value()))
+                : convertValue(record.value())
+        );
         return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), null, jsonString, record.timestamp());
     }
 
@@ -68,7 +87,7 @@ public class ToJson<R extends ConnectRecord<R>> implements Transformation<R> {
 
     @Override
     public ConfigDef config() {
-        return new ConfigDef();
+        return CONFIG_DEF;
     }
 
     @Override

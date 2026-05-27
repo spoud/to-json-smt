@@ -83,4 +83,24 @@ public class ToJsonTest {
             assertEquals("null", transformedRecord.value());
         }
     }
+
+    @Test
+    public void testWrapFeature() {
+        try (var toJson = new ToJson<SourceRecord>()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("wrap", true);
+            toJson.configure(props);
+
+            final Schema keySchema = Schema.STRING_SCHEMA;
+            final String key = "my-key";
+            final Schema valueSchema = SchemaBuilder.struct().name("value").field("foo", Schema.STRING_SCHEMA).build();
+            final Struct value = new Struct(valueSchema).put("foo", "bar");
+
+            final SourceRecord record = new SourceRecord(null, null, "test", 0, keySchema, key, valueSchema, value);
+            final SourceRecord transformedRecord = toJson.apply(record);
+
+            String result = (String) transformedRecord.value();
+            assertEquals("{\"value\":{\"foo\":\"bar\"},\"key\":\"my-key\"}", result);
+        }
+    }
 }
