@@ -34,3 +34,9 @@ To obtain an output like `{"foo":1,"bar":2}`, we add the SMT to the Connector co
   "value.converter.schema.registry.url": "http://schema-registry:8080/apis/ccompat/v7"
 }
 ```
+
+## Configuration
+
+| Name   | Type      | Default | Description |
+|--------|-----------|---------|-------------|
+| `wrap` | `Boolean` | false   | If enabled, the SMT will wrap the key and the value in a single JSON object, e.g. `{ "key": ..., "value": ... }`.
