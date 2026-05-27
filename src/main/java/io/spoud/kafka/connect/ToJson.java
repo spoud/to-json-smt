@@ -56,10 +56,17 @@ public class ToJson<R extends ConnectRecord<R>> implements Transformation<R> {
 
     @Override
     public R apply(R record) {
-        var jsonString = objectMapper.writeValueAsString(wrapKeyValue
-                ? convertValue(Map.of("key", record.key(), "value", record.value()))
-                : convertValue(record.value())
-        );
+        Object valueToConvert;
+        if (wrapKeyValue) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("key", record.key());
+            map.put("value", record.value());
+            valueToConvert = map;
+        } else {
+            valueToConvert = record.value();
+        }
+
+        var jsonString = objectMapper.writeValueAsString(convertValue(valueToConvert));
         return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), null, jsonString, record.timestamp());
     }
 
