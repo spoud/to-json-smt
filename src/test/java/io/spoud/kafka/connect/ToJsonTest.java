@@ -137,4 +137,108 @@ public class ToJsonTest {
             assertEquals("bar", valueResult.get("foo"));
         }
     }
+
+    @Test
+    public void testPathFeature() throws Exception {
+        try (var toJson = new ToJson<SourceRecord>()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("path", "inner");
+            toJson.configure(props);
+
+            final Schema innerSchema = SchemaBuilder.struct().name("inner").field("foo", Schema.STRING_SCHEMA).build();
+            final Schema outerSchema = SchemaBuilder.struct().name("outer").field("inner", innerSchema).field("bar", Schema.INT32_SCHEMA).build();
+
+            final Struct innerStruct = new Struct(innerSchema).put("foo", "hello");
+            final Struct outerStruct = new Struct(outerSchema).put("inner", innerStruct).put("bar", 123);
+
+            final SourceRecord record = new SourceRecord(null, null, "test", 0, outerSchema, outerStruct);
+            final SourceRecord transformedRecord = toJson.apply(record);
+
+            assertNotNull(transformedRecord.valueSchema());
+            assertEquals(Schema.Type.STRUCT, transformedRecord.valueSchema().type());
+            assertEquals(Schema.Type.STRING, transformedRecord.valueSchema().field("inner").schema().type());
+            assertEquals(Schema.Type.INT32, transformedRecord.valueSchema().field("bar").schema().type());
+
+            Struct result = (Struct) transformedRecord.value();
+            assertEquals(123, result.get("bar"));
+            String innerJson = (String) result.get("inner");
+            Map<String, Object> innerResult = objectMapper.readValue(innerJson, new TypeReference<>() {});
+            assertEquals("hello", innerResult.get("foo"));
+        }
+    }
+
+    @Test
+    public void testDeepPathFeature() throws Exception {
+        try (var toJson = new ToJson<SourceRecord>()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("path", "inner.nested");
+            toJson.configure(props);
+
+            final Schema nestedSchema = SchemaBuilder.struct().name("nested").field("magic", Schema.INT32_SCHEMA).build();
+            final Schema innerSchema = SchemaBuilder.struct().name("inner").field("nested", nestedSchema).build();
+            final Schema outerSchema = SchemaBuilder.struct().name("outer").field("inner", innerSchema).build();
+
+            final Struct nestedStruct = new Struct(nestedSchema).put("magic", 42);
+            final Struct innerStruct = new Struct(innerSchema).put("nested", nestedStruct);
+            final Struct outerStruct = new Struct(outerSchema).put("inner", innerStruct);
+
+            final SourceRecord record = new SourceRecord(null, null, "test", 0, outerSchema, outerStruct);
+            final SourceRecord transformedRecord = toJson.apply(record);
+
+            Struct result = (Struct) transformedRecord.value();
+            Struct resultInner = (Struct) result.get("inner");
+            String nestedJson = (String) resultInner.get("nested");
+            assertEquals("{\"magic\":42}", nestedJson);
+            
+            assertEquals(Schema.Type.STRING, resultInner.schema().field("nested").schema().type());
+        }
+    }
+
+    @Test
+    public void testSchemalessPathFeature() throws Exception {
+        try (var toJson = new ToJson<SourceRecord>()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("path", "a.b");
+            toJson.configure(props);
+
+            Map<String, Object> b = new HashMap<>();
+            b.put("c", 1);
+            Map<String, Object> a = new HashMap<>();
+            a.put("b", b);
+
+            Map<String, Object> root = new HashMap<>();
+            root.put("a", a);
+
+            final SourceRecord record = new SourceRecord(null, null, "test", 0, null, root);
+            final SourceRecord transformedRecord = toJson.apply(record);
+
+            Map<String, Object> result = (Map<String, Object>) transformedRecord.value();
+            Map<String, Object> resultA = (Map<String, Object>) result.get("a");
+            String bJson = (String) resultA.get("b");
+            assertEquals("{\"c\":1}", bJson);
+        }
+    }
+
+    @Test
+    public void testWrapAndPathFeature() throws Exception {
+        try (var toJson = new ToJson<SourceRecord>()) {
+            Map<String, Object> props = new HashMap<>();
+            props.put("wrap", true);
+            props.put("path", "value.foo");
+            toJson.configure(props);
+
+            final Schema valueSchema = SchemaBuilder.struct().name("value").field("foo", SchemaBuilder.struct().field("bar", Schema.STRING_SCHEMA).build()).build();
+            final Struct foo = new Struct(valueSchema.field("foo").schema()).put("bar", "baz");
+            final Struct value = new Struct(valueSchema).put("foo", foo);
+
+            final SourceRecord record = new SourceRecord(null, null, "test", 0, Schema.STRING_SCHEMA, "my-key", valueSchema, value);
+            final SourceRecord transformedRecord = toJson.apply(record);
+
+            Map<String, Object> result = (Map<String, Object>) transformedRecord.value();
+            assertEquals("my-key", result.get("key"));
+            Struct resultValue = (Struct) result.get("value");
+            String fooJson = (String) resultValue.get("foo");
+            assertEquals("{\"bar\":\"baz\"}", fooJson);
+        }
+    }
 }
